@@ -1,0 +1,390 @@
+/*
+ * Includes do sistema
+ */
+
+#include "cybdefs.h"
+#include "stdlib.h"
+
+
+/*
+ * Constantes
+ */
+
+
+#define ST_OK        0
+
+
+#define COLUNAS_ARQUIVO 2001       /*! Numero da ultima coluna do registro + LF (line feed) */
+
+#define _EOS    '\0'         /*!< Final de string */
+
+
+
+/*
+ * SQL
+ */
+
+EXEC SQL INCLUDE SQLCA;
+
+/* ---------------------------------------------------------------------------------------------*/
+/*
+ * Atributos globais.
+ */
+/* ---------------------------------------------------------------------------------------------*/
+	  char str[COLUNAS_ARQUIVO + 1];
+	  char str1[COLUNAS_ARQUIVO + 1];
+
+	  char qry_valida[300];
+	  char qry_upd_uda6[600];
+	  
+	  
+	  
+	  char stExiste[2];
+	  char stIdacordo[12];	  	  
+	  char stDmssnum[11];	  
+	  int  iDmssnumAux=0;  					
+		char stTelenr[11];    
+		char stRamclienr[6];
+		char stCel1clienr[12];
+		char stCel2clienr[12];
+		char stTelcomenr[11];
+		char stRamcomenr[6];
+		char stDtatuenr[9];
+		char stEmpenr[6];
+  	  
+
+ 	  char data_temp[21];        
+    char dtmovimento[9];          
+    char yyyymmdd_temp[21];
+    char hhmm_temp[10];
+  
+
+ EXEC SQL BEGIN DECLARE SECTION;
+    
+    EXEC SQL VAR data_temp        IS STRING;    
+    EXEC SQL VAR dtmovimento      IS STRING;    
+    EXEC SQL VAR yyyymmdd_temp    IS STRING;
+    EXEC SQL VAR hhmm_temp        IS STRING;    
+    EXEC SQL VAR stExiste				  IS STRING;
+    EXEC SQL VAR stIdacordo				IS STRING;
+    EXEC SQL VAR stDmssnum      	IS STRING;    
+    EXEC SQL VAR iDmssnumAux      IS INTEGER;    
+    EXEC SQL VAR stTelenr				  IS STRING;               
+    EXEC SQL VAR stRamclienr			IS STRING;
+    EXEC SQL VAR stCel1clienr			IS STRING;
+    EXEC SQL VAR stCel2clienr			IS STRING;
+    EXEC SQL VAR stTelcomenr			IS STRING;
+    EXEC SQL VAR stRamcomenr			IS STRING;
+    EXEC SQL VAR stDtatuenr				IS STRING;
+    EXEC SQL VAR stEmpenr				  IS STRING;
+	
+	EXEC SQL END DECLARE SECTION;
+   
+	
+int d_bug = 0; 
+ULONG tot_lidos = 0, tot_gravados = 0,tot_rejeitados =0, tot_regECT = 2, tot_ECTs = 0;
+
+
+/* --------------------------------------------------------------------------------------*/
+/*
+ * Metodos privados.
+ */
+/* --------------------------------------------------------------------------------------*/
+
+/*
+ * Funcao de apoio "substr".
+ */
+
+static void substr (char *s1, int x, int y, char *s2)
+{
+    int count, i = 0;
+    for (count = x; i < y;count++, i++)
+        s2[i] = s1[count];
+    s2[i] = '\0';
+}
+
+
+/* -------- Programa Principal --------- */
+
+
+int main(argc, argv)
+int argc;
+
+char *argv[];
+{
+    int i=1, ret, c, nargs, nflgs = 0;
+    extern  char* optarg;
+    FILE *fpe;
+    FILE *fps;
+
+    char fnameent[300];
+    char fnamesai[300];
+    char fdiretorio[300];
+    char szTemp[500];
+    char Registro[231];
+    char dbname[60];
+	  char *usuario;
+	  char *banco;	  
+
+    static char SccsId[] = "@(#)beb623.pc\t\t2.0\t(CYBER AGENCY - CETELEM)  06/06/2013";
+    static char *copy1right = "CyberFinancial \n";
+    static char *copy2right = "Inffinix Software S.A. \n";
+    static char *copy3right = "Copyright (c) Inffinix Software S.A.    , 2012 \n";
+
+    char progid[50];   /*!< Identificador do processo vigente */
+		
+    char* vers = SccsId;
+		
+    /* Inicializacao. */
+
+    d_bug = ret = 0;
+
+
+    fnameent  [0] = _EOS;
+    fnamesai  [0] = _EOS;
+    fdiretorio[0] = _EOS;
+
+    strcpy(progid, argv[0]);
+
+   
+    fprintf(stdout, "%s \n\n%s%s%s\n", vers, copy1right, copy2right, copy3right);
+    fprintf(stdout, "Parametros de execucao : ");
+    fflush(stdout);
+
+    /* Leitura e validacao do parametros fornecidos. */
+
+    for (i = 0; i < argc; i++)
+    {
+        fprintf(stdout, " %s ", argv[i]);
+        fflush(stdout);
+    }
+
+    fprintf(stdout, "\n"); fflush(stdout);
+
+    while ((c = getopt (argc, argv, "?hvde:s:f:")) != -1) {
+        switch (c)
+        {
+        case '?':
+        case 'h':
+            fprintf (stdout, "\nUSO: %s [-options] \n", argv[0]);
+            fprintf (stdout, "OPTIONS:    \n");
+            fprintf (stdout, "-e nomearq    : Nome Arquivo de Entrada \n");
+            fprintf (stdout, "-s diretorio  : Diretorio Arquivo de Saida \n");
+            fprintf (stdout, "-h            : Exibe ajuda\n");
+            fprintf (stdout, "-v            : Exibe copyright e numero da versao \n");
+            fprintf (stdout, "-d            : Liga Debug\n");                    
+            exit (9);
+            break;
+        case 'e':           /* arquivo de entrada */
+            strcpy (fnameent, optarg);
+            break;
+        case 's':           /* diretorio do arquivo de saida */
+            strcpy (fdiretorio, optarg);
+            break;
+        case 'd':           /* if -d, set dbug */
+            d_bug = 1;
+            break;        
+        case 'v':           /* imprimir versão */
+            fprintf (stdout, "\n%s \n\n%s%s%s\n",vers, copy1right, copy2right, copy3right);
+            exit(90);
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (strlen(fnameent) == 0)
+    {
+        fprintf (stdout, "Opcao -e (nome arquivo de entrada) obrigatoria!\n"); fflush(stdout);
+        exit (2);
+    }
+    if (strlen(fdiretorio) == 0)
+    {
+        fprintf (stdout, "Opcao -s (Diretorio de Saida) obrigatoria!\n"); fflush(stdout);
+        exit (2);
+    }
+    
+		
+		/* pega variaveis de ambiente para conexao com banco */
+		usuario=getenv("CYBERCONN");
+		banco=getenv("ORACLE_SID");
+		
+		/* verifica variavel de ambiente*/
+    if (usuario == NULL)
+    {
+        fprintf (stdout, "Variavel de ambiente CYBERCONN nao definida !\n");
+        exit (2);
+    }
+		
+		/* verifica variavel de ambiente*/
+		 if (banco == NULL)
+    {
+        fprintf (stdout, "Variavel de ambiente ORACLE_SID nao definida !\n");
+        exit (2);
+    }
+		
+    sprintf(dbname, "%s@%s",usuario,banco);
+
+    /* Inicia processo */
+    
+    EXEC SQL CONNECT :dbname;
+	
+    EXEC SQL SELECT to_char (sysdate,'yyyymmdd hh24:mi:ss') INTO :data_temp FROM dual;   
+    	
+    EXEC SQL SELECT to_char (ifxdate,'yyyymmdd') INTO :yyyymmdd_temp FROM dual;          
+    
+    EXEC SQL SELECT to_char (sysdate,'hh24mi')   INTO :hhmm_temp     FROM dual;        
+        
+    	
+    /* abre arquivo leitura*/	  
+    if ((fpe=fopen(fnameent,"r"))==NULL)
+    {
+        fprintf(stdout,"Arquivo (%s) nao pode ser Aberto !\n",fnameent); fflush(stdout);
+        exit(1);
+    }
+   
+    /*  Monta o log:  aaaammdd_hhmm_retorno_telefones_bi_beb623.log */        
+    sprintf(fnamesai,"%s/%8s_%4s_retorno_telefones_bi_beb623.log", fdiretorio,yyyymmdd_temp,hhmm_temp);    
+    
+    /* abre arquivo escrita*/	  
+    if ((fps = fopen(fnamesai,"w")) == NULL)
+    {
+        fprintf(stderr,"Erro abertura arquivo saida %s - errno %d\n",fnamesai,errno);
+        exit(90);
+    }  
+    		
+    strcpy(str, "");
+    strcpy(str1, "");
+    strcpy(Registro, "");
+    strcpy(stExiste, "");
+    
+    /* pula o header */
+    fgets(str,COLUNAS_ARQUIVO + 1,fpe);
+    fgets(str,COLUNAS_ARQUIVO + 1,fpe);
+    
+    do /* processamento principal*/
+    {				
+    		/*verifica se chegou no trailler*/
+				if (str[0] == '9')
+        	{
+        		fprintf (stdout, "\nFim do arquivo:%s\n",fnameent);
+            break;
+        	}            	      	
+    		
+    		/*pega os valores do arquivo*/
+    		substr(str,1,11,stIdacordo);                                 			
+    		substr(str,12,10,stDmssnum);                       		
+    		substr(str,22,10,stTelenr);                                 			
+    		substr(str,32,5,stRamclienr);                                 			
+    		substr(str,37,11,stCel1clienr);  
+    		substr(str,48,11,stCel2clienr);  
+    		substr(str,60,10,stTelcomenr);  
+    		substr(str,69,5,stRamcomenr);  
+    		substr(str,74,8,stDtatuenr);  
+    		substr(str,82,5,stEmpenr);  
+        	
+        
+      	/* Valida se existe na base */                
+      	sprintf (qry_valida, "SELECT COUNT(U6ACCT) FROM UDA6 WHERE U6ACCT LIKE '%s%';",stDmssnum);
+      	if (d_bug == 1)
+      	{
+      	fprintf(stdout,"Query usada:%s\n", qry_valida); fflush(stdout);
+      	}                
+      	EXEC SQL SELECT COUNT(U6ACCT) INTO :iDmssnumAux FROM UDA6 WHERE U6ACCT LIKE :stDmssnum || '%' ;      	      	      	
+      	
+      	/* se nao existe */
+      	if (iDmssnumAux == 0)       	
+      	{
+      		if (d_bug == 1)
+      		{
+      			/* grava no .log */
+        		sprintf(str1,"Contrato:[%10s] nao existe na base",stDmssnum);       
+     				strncpy(Registro,str1,sizeof(Registro));               		     		
+        		Registro[40] = '\0';        	     		                                			
+        		fprintf(fps,"%s\n",Registro);        		 
+      		}     
+      		tot_rejeitados++;          
+        	strcpy(stExiste, "N");
+      	}
+      		/* se existe */
+      		else 
+      			{
+      				strcpy(stExiste, "S");
+      			}
+      			
+			 /* Se existe na base efetua processamento */
+			 if (strcmp(stExiste,"S") == 0) 
+			 {
+			 	/* grava no .log*/
+			 	sprintf(str1,"Contrato:[%10s] atualizado",stDmssnum);       
+     		strncpy(Registro,str1,sizeof(Registro));               		     		
+       	Registro[40] = '\0';        	     		                                			
+       	fprintf(fps,"%s\n",Registro);
+       	tot_gravados++;
+        						 	
+			 	/* atualiza uda6 */        
+       	sprintf (qry_upd_uda6, "update uda6 set u6idacordo ='%s',u6telenr ='%s',u6ramclienr =%s,u6cel1clienr ='%s',u6cel2clienr ='%s',u6telcomenr ='%s',u6ramcomenr =%s,u6dtatuenr =TO_date('%s', 'MM/DD/YYYY'),u6empenr =%s,U6CONFTEL1 =NULL,U6CONFTEL2 =NULL,U6CONFTEL3 =NULL,U6CONFTEL4 =NULL,U6CONFTEL5 =NULL,U6CONFTEL6 =NULL where U6ACCT LIKE '%s%';",stIdacordo,stTelenr,stRamclienr,stCel1clienr,stCel2clienr,stTelcomenr,stRamcomenr,stDtatuenr,stEmpenr,stDmssnum);
+       	if (d_bug == 1)
+       	{
+       	fprintf(stdout,"Query usada:%s\n", qry_upd_uda6); fflush(stdout);        
+       	}       	
+	      EXEC SQL update uda6
+	   		 set 
+	   		 		u6idacordo   = :stIdacordo,
+       			u6telenr     = :stTelenr,
+       	  	u6ramclienr  = :stRamclienr,
+       	  	u6cel1clienr = :stCel1clienr,
+       	  	u6cel2clienr = :stCel2clienr,
+       	  	u6telcomenr  = :stTelcomenr,
+       	  	u6ramcomenr  = :stRamcomenr,
+       	  	u6dtatuenr   = TO_date(:stDtatuenr, 'MM/DD/YYYY'),
+       	  	u6empenr     = :stEmpenr,
+       	  	U6CONFTEL1   = NULL,
+       	  	U6CONFTEL2   = NULL,
+       	  	U6CONFTEL3   = NULL,
+       	  	U6CONFTEL4   = NULL,
+       	  	U6CONFTEL5   = NULL,
+       	  	U6CONFTEL6   = NULL
+ 			 where U6ACCT LIKE  :stDmssnum || '%'; 			 
+       } 
+        	
+				EXEC SQL COMMIT;
+				tot_lidos++;         	        	    
+        tot_regECT++;
+        
+        strcpy (str, "");
+        strcpy (str1, "");
+        strcpy (Registro, "");
+        strcpy (stExiste, "");
+        
+
+    }while( (fgets(str,COLUNAS_ARQUIVO + 1,fpe)) != NULL);
+    			
+    if (tot_lidos > 0)   
+    {           
+    	  tot_ECTs++;    	     	   
+        fclose(fps);
+    }
+    fclose(fpe);  /* fecha interface de entrada */
+
+
+    /* Grava resumo consolidado . */
+
+    fprintf(stdout,"\n ");
+    fprintf(stdout,"\n   *****  Resumo do Processo  *****\n");
+    fprintf(stdout,"%40s %8ld\n", "Total de Registros Lidos .......:" , tot_lidos);
+    fprintf(stdout,"%40s %8ld\n", "  Total de Registros Atualizados..:" , tot_gravados);
+    fprintf(stdout,"%40s %8ld\n", "  Total de Registros Rejeitados...:" , tot_rejeitados);
+    fprintf(stdout,"%40s %8ld\n", "Total de Arquivos Gravados .....:" , tot_ECTs);  
+
+    fflush(stdout);
+               
+    EXEC SQL SELECT sysdate INTO :data_temp FROM DUAL;
+    fprintf(stdout, "\nProcesso %s finalizado: %s \n\n", progid, data_temp); fflush(stdout);
+    
+    EXEC SQL COMMIT WORK RELEASE;
+
+    exit(ST_OK);
+
+}   /***  end main()  ***/
+
