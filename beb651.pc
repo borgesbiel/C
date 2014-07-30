@@ -1,0 +1,452 @@
+#include        <stdio.h>
+#include        <stdlib.h>
+#define         MANISIDEFS
+#include        "si_defs.h"
+#include        "ccsdefs.h"
+
+#include        <math.h> 
+#include        <time.h>
+#include        <ctype.h>
+#include        <strings.h>
+#include        <errno.h>
+#include        <sys/file.h>
+#include        "cybdefs.h"
+
+#define _EOS    '\0'         /*!< Final de string */
+#define _EOL    '\n'         /*!< Final de linha */
+
+#define HIST_EV_MODO_ONLINE   "1"
+#define HIST_EV_MODO_INBATCH  "2"
+
+#define HIST_EV_ST_EM_ABERTO   "E"
+#define HIST_EV_ST_CONCLUIDO   "C"
+#define HIST_EV_ST_CANCELADO   "X"
+
+#define ST_OK      0
+#define ST_FALHA   -1
+
+/*
+ * SQL
+ */
+EXEC SQL INCLUDE SQLCA;
+EXEC SQL INCLUDE SQLDA;
+EXEC SQL WHENEVER SQLERROR DO sqlprint("Programa beb651: ");
+void sqlprint();
+
+EXEC SQL BEGIN DECLARE SECTION;
+    int regs;
+    char grupo[2];     
+    char data_temp[21];
+    char sel_qry_cursor[15000];
+    char acionamento[118];
+    char dmacct[26];
+    char szDtInicio[21];    
+    char vECT[9];
+    char vBranch[5];
+    char wdata[9];
+    char whora[7];
+    char wdata_ciclo[9];
+    char szYYYYMM[7];
+    char branco101[102];
+    char branco92[93];
+    char vECTAntes[9];
+    char yyyymmdd_temp[9];
+    char hhmm_temp[5];
+    char hhmmss_temp[7];
+ 
+EXEC SQL DECLARE qry_stmt  STATEMENT;
+
+EXEC SQL END DECLARE SECTION;
+
+EXEC SQL VAR sel_qry_cursor   IS STRING;
+EXEC SQL VAR data_temp        IS STRING;
+EXEC SQL VAR wdata            IS STRING;
+EXEC SQL VAR whora            IS STRING;
+EXEC SQL VAR wdata_ciclo      IS STRING;
+EXEC SQL VAR vECT             IS STRING;
+EXEC SQL VAR vECTAntes        IS STRING;
+EXEC SQL VAR acionamento      IS STRING;
+EXEC SQL VAR dmacct           IS STRING;
+EXEC SQL VAR vBranch          IS STRING;
+EXEC SQL VAR branco101        IS STRING;
+EXEC SQL VAR branco92         IS STRING;
+EXEC SQL VAR yyyymmdd_temp    IS STRING;
+EXEC SQL VAR hhmm_temp        IS STRING;
+EXEC SQL VAR hhmmss_temp      IS STRING;
+
+int d_bug;
+long int tot_registros=0;
+long int tot_contratos=0;
+long int tot_geral=0;
+long int tot_ect=0;
+long int tot_acion=0;
+
+char inpdt[40];
+char fname[200];
+char fname1[256];
+char fnameoriginal[200];
+char gerar='S'; 
+char progid[150];  
+char fdir[200];
+char vABR[3];
+char dbname[60];
+char *usuario;
+char *banco;	  
+
+    
+FILE *fp;
+
+/*
+ * Gera Header do Arquivo.
+ *
+ */
+
+static void Gera_Header_651()
+{     
+    EXEC SQL SELECT to_char (sysdate,'yyyymmdd') INTO :yyyymmdd_temp FROM dual;  
+    EXEC SQL SELECT to_char (sysdate,'hh24mi')   INTO :hhmm_temp     FROM dual;
+    EXEC SQL SELECT to_char (sysdate,'hh24miss') INTO :hhmmss_temp   FROM dual;
+    tot_ect++;  
+       
+    if (d_bug)
+    {
+       fprintf(stdout, "\nRemessa [%s]:  %s ",vECT, fname);
+       fflush(stdout);
+    }
+	
+	/* Arquivo  Acionamentos_XX_out.txt  */    
+    sprintf(fname1,"%s/Acionamentos_%2s_out.txt",fname,vECT);
+
+    if ((fp = fopen(fname1,"w")) == NULL)
+    {
+       fprintf(stderr,"Erro abertura arquivo saida %s - errno %d\n",fname,errno);
+       exit(90);
+    }    
+
+    EXEC SQL SELECT to_char (sysdate,'ddmmyyyy'),  to_char (sysdate,'hhmiss')
+                    INTO :wdata, :whora FROM dual;
+    
+    fprintf(fp,"0%15s%8s%6s\n",vECT,wdata,whora);
+}
+
+/*!
+ * Gera Trailler do Arquivo.
+ *
+ */
+static void Gera_Trailler_651()
+{
+
+    tot_registros = tot_registros + 2;
+    EXEC SQL SELECT to_char (sysdate,'ddmmyyyy'),  to_char (sysdate,'hhmiss')
+                    INTO :wdata, :whora FROM dual;
+    
+    fprintf(fp,"9%8s%6s%08ld\n",wdata,whora,tot_registros);         
+    fclose(fp);  
+}
+
+
+
+/*  Le e Grava os 5 ultimos acionamentos do Contrato  */
+void Le_Grava_Acionamentos()
+{
+    
+    EXEC SQL DECLARE CURSOR_ACION CURSOR FOR
+         SELECT  RPAD(A.ACACCTG,1,' ') || RPAD(A.ACACCT,25,' ') ||   
+                 To_CHAR(A.ACACTDTE,'DDMMYYYY')   || 
+                 To_CHAR(A.ACACTDTE,'HH:MI:SS')   || 
+                 LPAD(nvl(A.ACSEQNUM,0),5,'0')    ||
+                 RPAD(nvl(A.ACACCODE,'  '),2,' ') ||                                                    
+                 RPAD(nvl(A.ACRCCODE,'  '),2,' ') ||                                                    
+                 RPAD(nvl(A.ACLCCODE,'  '),2,' ') ||
+                 RPAD(:vECT,8,' ')                ||        
+                 RPAD(nvl(A.ACCIDNAM,' '),8,' ')  ||                                                       
+                 RPAD(nvl(A.ACCOMM,' '),48,' ')                                                
+         FROM   RCVRY.ACTFIL A             
+         WHERE  A.ACACCTG = :grupo  and  A.ACACCT = TRIM(:dmacct)  and  
+                nvl(A.ACCIDNAM,' ')  <>  'HOST'  and  
+                nvl(A.ACACCODE,' ')  <>  'AX'                 
+         ORDER BY  A.ACACTDTE desc;
+ 
+         EXEC SQL OPEN  CURSOR_ACION;
+         
+    tot_acion=0; 
+    for (;;)    /*  Loop para gravar os 5 ultimos acionamentos do contrato distribuido */
+    {
+        EXEC SQL FETCH CURSOR_ACION  INTO  :acionamento;
+                                     
+        if (sqlca.sqlcode == NOT_FOUND)
+            break;                
+
+        if (d_bug)
+        {
+            fprintf(stdout, "\nacionamento:[%s] ", acionamento);
+            fflush(stdout);
+        } 
+
+        /*  TRATA QUEBRA DE ECT GRAVANDO HEADER E TRAILLER */
+        if (tot_ect == 0)
+            Gera_Header_651();
+        
+        if (strcmp(vECT,vECTAntes) != 0 )
+        {
+            Gera_Trailler_651();
+            Gera_Header_651();
+            tot_registros=0;
+            strcpy(vECTAntes,vECT);
+        }   
+                        
+        tot_acion++;   
+        if (tot_acion  < 6)
+        {
+            fprintf(fp,"1%s\n",acionamento);
+            tot_registros++;
+            tot_geral++;
+        }
+        else
+            break;
+
+                
+    } /*** fim do For ***/
+            
+    EXEC SQL CLOSE CURSOR_ACION;
+
+}
+
+
+/*
+ * Funcao de apoio "substr".
+ */
+
+static void substr (char *s1, int x, int y, char *s2)
+{
+    int count, i = 0;
+    for (count = x; i < y;count++, i++)
+        s2[i] = s1[count];
+    s2[i] = '\0';
+}
+
+
+int main(argc, argv)
+
+int     argc;
+char   *argv[];
+{
+    int i, c, nargs, nflgs = 0;
+    extern  char* optarg;
+    char szTemp[200];
+
+    char* username;
+    char* password;
+    char* instancia;
+   
+    static char SccsId[] = "@(#)beb651.pc\t\t2.0\t(CYBERFINANCIAL)  11/12/2008";
+    static char *copy1right = "CyberFinancial \n";
+    static char *copy2right = "Inffinix Software S.A. \n";
+    static char *copy3right = "Copyright (c) Inffinix Software S.A.    , 2008 \n";
+    
+    char *vers = SccsId;
+
+    d_bug     = 0;
+    fname[0]  ='\0';
+    fnameoriginal[0]='\0';    
+    inpdt[0]='\0';
+    szTemp    [0] = _EOS;
+    szDtInicio[0] = _EOS;
+    /*-----------------------------------------------------------------------------*/
+    fprintf(stdout, "GERAÇÃO ARQUIVO DE REMESSA DE ACIONAMENTO DE TELECOBRANCA POR ECT\n");
+    fprintf(stdout, "%s \n\n%s%s%s\n", vers, copy1right, copy2right, copy3right);
+    fprintf(stdout, "Parâmetros de execução : ");
+    fflush(stdout);
+
+    for (i = 0; i < argc; i++)
+    {
+       fprintf(stdout, " %s ", argv[i]);
+       fflush(stdout);
+    }
+
+    strcpy(progid, argv[0]);
+
+    while ((c = getopt (argc, argv, "?hvdf:a:g:")) != -1) {
+        switch (c) {
+        case '?':
+        case 'h':
+             fprintf (stderr, "\nUSO: %s [-options] \n", argv[0]);
+             fprintf (stderr, "OPTIONS:    \n");
+             fprintf (stdout, "  -a nome diretório \n");
+             fprintf (stdout, "  -g grupo \n");
+             fprintf (stderr, "  -h          : Exibe ajuda\n");
+             fprintf (stderr, "  -v          : Exibe copyright e número da versão \n");
+             fprintf (stderr, "  -d          : Liga Debug\n");
+             fprintf (stderr, "  -f AAAAMMDD : Ano e Mês do processamento (default: Mês e Ano da data atual)\n");
+             exit (9);
+             break;
+         case 'a':           /* diretorio de saida */
+            strcpy (fname, optarg);
+            break;
+         case 'g':           /* grupo a ser processado. */
+            strcpy (grupo, optarg);
+            break;
+         case 'd':           /* if -d, set dbug */
+            printf("\nDebug Ligado\n");
+            d_bug = 1;
+            break;
+         case 'f':           /* data de processamento */
+            strcpy (inpdt, optarg);
+            printf("%s\n",inpdt);
+            break;
+         case 'v':           /* imprimir versão */
+            fprintf (stderr, "\n%s \n\n%s%s%s\n",
+                  vers, copy1right, copy2right, copy3right);
+            exit(90);
+            break;
+         default:
+            exit(90);
+            break;
+        }
+    }
+
+    if (strlen(fname) == 0)
+    {
+        fprintf (stdout, "Opção -a (nome arquivo de entrada) obrigatoria!\n"); fflush(stdout);
+        exit (2);
+    }
+
+    /* pega variaveis de ambiente para conexao com banco */
+		usuario=getenv("CYBERCONN");
+		banco=getenv("ORACLE_SID");
+		
+		/* verifica variavel de ambiente*/
+    if (usuario == NULL)
+    {
+        fprintf (stdout, "Variavel de ambiente CYBERCONN nao definida !\n");
+        exit (2);
+    }
+		
+		/* verifica variavel de ambiente*/
+		 if (banco == NULL)
+    {
+        fprintf (stdout, "Variavel de ambiente ORACLE_SID nao definida !\n");
+        exit (2);
+    }
+		    
+
+    if (strlen(inpdt) == 0)
+    {
+        fprintf (stderr, "Ano e Mês não informado como parâmetro, programa finalizado. \n");
+        exit(90);
+    }
+
+    sprintf(dbname, "%s@%s",usuario,banco);
+
+    /*  Inicia processo */
+    fprintf(stdout, "\nInstância de BD: %s \n", instancia);
+    fflush(stdout);
+
+    EXEC SQL CONNECT :dbname;
+
+    EXEC SQL SELECT to_char( to_date(:inpdt,'yyyymmdd'),'ddmmyyyy')
+                   INTO :wdata_ciclo  FROM dual;
+
+    EXEC SQL SELECT to_char (sysdate,'yyyymmdd hh24:mi:ss') INTO :data_temp FROM dual;
+    EXEC SQL SELECT to_char (sysdate,'yyyymmdd') INTO :yyyymmdd_temp FROM dual;  
+    EXEC SQL SELECT to_char (sysdate,'hh24mi')   INTO :hhmm_temp     FROM dual;
+    EXEC SQL SELECT to_char (sysdate,'hh24miss') INTO :hhmmss_temp   FROM dual;
+    EXEC SQL COMMIT;
+
+
+    strcpy(szDtInicio, data_temp);    /* Data a ser gravada no log do histórico de eventos */
+	    
+    strcpy(fdir,fname);
+    
+    fprintf(stdout, "\nLendo Contratos Distribuídos para Empresas de Telecobranca para remessa p/ECT...,%s\n", data_temp);
+    fflush(stdout);
+
+
+    sprintf(sel_qry_cursor,
+    " select  RPAD(D.DMACCT,25,' '),  "
+    "         D.DMAGENCY "
+    "    From   Delqmst D "
+    "    Where   D.DMACCTG = '%s'  and  "
+    "      D.DMAGENCY is not null  and  "
+    "      to_char(D.DMAGNREF,'YYYYMMDD') = '%s' "
+    "    Order by  D.DMAGENCY , D.DMACCT "
+    , grupo , inpdt);
+
+    if (d_bug)
+    {
+        fprintf(stdout, "\nSQL:  %s ", sel_qry_cursor);
+        fflush(stdout);
+    }
+
+          
+    EXEC SQL PREPARE qry_stmt FROM :sel_qry_cursor;
+    EXEC SQL DECLARE Cursor_ECT CURSOR FOR qry_stmt;
+    EXEC SQL OPEN Cursor_ECT;
+    EXEC SQL FETCH Cursor_ECT INTO :dmacct,
+                                   :vECT;
+ 
+                                     
+    if ( sqlca.sqlcode == NOT_FOUND )
+    {
+        fprintf(stdout, "\nNenhum Acionamento de contratos distribuídos foi selecionado para esta data do ciclo.");
+        fflush(stdout);
+    }
+    else
+    { 
+        if (d_bug)
+        {
+            fprintf(stdout, "\ndmacct:[%s] vECT:[%s] ", dmacct , vECT);
+            fflush(stdout);
+        }    
+            
+
+        strcpy(vECTAntes,vECT);
+        tot_registros=0;
+        
+                
+        for (;;) 
+        {
+            tot_contratos++;
+            
+            Le_Grava_Acionamentos();
+        
+        
+            EXEC SQL FETCH Cursor_ECT INTO :dmacct,
+                                           :vECT;
+        
+            if (sqlca.sqlcode == NOT_FOUND)
+                 break;
+                 
+            if (d_bug)
+            {
+                fprintf(stdout, "\ndmacct:[%s] vECT:[%s] ", dmacct , vECT);
+                fflush(stdout);
+            }    
+        
+                  
+        } /*** fim do For cursor_ect  ***/
+        
+        if (tot_ect > 0)
+            Gera_Trailler_651();
+    }
+
+            
+    EXEC SQL CLOSE Cursor_ECT;
+
+    fprintf (stdout, "\nResumo do Processo.:\n");
+
+    fprintf (stdout, "%40s %6ld\n", "Total de Contratos Lidos       :", tot_contratos);
+    fprintf (stdout, "%40s %6ld\n", "Total de ECTs Gravados         :", tot_ect);
+    fprintf (stdout, "%40s %6ld\n", "Total de Acionamentos Gravados :", tot_geral);
+    fflush (stdout);
+
+
+    EXEC SQL SELECT sysdate INTO :data_temp FROM DUAL;
+    fprintf(stdout, "\nProcesso %s finalizado: %s \n\n", progid, data_temp);
+    fprintf(stdout, "\n");
+    fflush (stdout);
+
+    EXEC SQL COMMIT WORK RELEASE;
+
+    exit(0);
+}   /***  end main()  ***/

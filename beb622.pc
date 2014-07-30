@@ -1,0 +1,372 @@
+/*
+ * Includes do sistema
+ */
+
+#include "cybdefs.h"
+#include "stdlib.h"
+
+
+/*
+ * Constantes
+ */
+
+
+#define ST_OK        0
+
+
+#define COLUNAS_ARQUIVO 2001       /*! Numero da ultima coluna do registro + LF (line feed) */
+
+#define _EOS    '\0'         /*!< Final de string */
+
+
+
+/*
+ * SQL
+ */
+
+EXEC SQL INCLUDE SQLCA;
+
+
+/* ---------------------------------------------------------------------------------------------*/
+/*
+ * Atributos globais.
+ */
+/* ---------------------------------------------------------------------------------------------*/
+	  char str[COLUNAS_ARQUIVO + 1];
+	  char str1[COLUNAS_ARQUIVO + 1];
+	  char stAgencia[3];
+	  char qry_sel_ahid[300];
+	  char qry_sel_adacct[300];
+	  char qry_upd_delqmst[300];
+	  char qry_upd_agrhdr[300];
+	  char qry_ins_actfil[300];
+	  char qry_ins_tranfl[300];
+	  
+	  
+	  char stTipoReg[4];	  
+	  
+	  char stNumContrato[11];
+	  char stAdacct[26];	  
+	  int  iAhid =0;
+	  char stAhcollid[9];
+	  char stAhtype[9];
+	  char stAhlstcurbal[12];
+
+ 	  char data_temp[21];        
+    char dtmovimento[9];          
+    char yyyymmdd_temp[21];
+    char hhmm_temp[10];
+  
+
+ EXEC SQL BEGIN DECLARE SECTION;
+    
+    EXEC SQL VAR data_temp          IS STRING;    
+    EXEC SQL VAR dtmovimento        IS STRING;    
+    EXEC SQL VAR yyyymmdd_temp      IS STRING;
+    EXEC SQL VAR hhmm_temp          IS STRING;
+    EXEC SQL VAR stNumContrato      IS STRING;
+    EXEC SQL VAR stAdacct           IS STRING;
+    EXEC SQL VAR iAhid				      IS INTEGER;
+ 
+            
+	
+	EXEC SQL END DECLARE SECTION;
+   
+	
+int d_bug = 0; 
+ULONG tot_lidos = 0, tot_gravados = 0, tot_regECT = 2, tot_ECTs = 0;
+
+
+/* --------------------------------------------------------------------------------------*/
+/*
+ * Metodos privados.
+ */
+/* --------------------------------------------------------------------------------------*/
+
+/*
+ * Funcao de apoio "substr".
+ */
+
+static void substr (char *s1, int x, int y, char *s2)
+{
+    int count, i = 0;
+    for (count = x; i < y;count++, i++)
+        s2[i] = s1[count];
+    s2[i] = '\0';
+}
+
+
+/* -------- Programa Principal --------- */
+
+
+int main(argc, argv)
+int argc;
+
+char *argv[];
+{
+    int i=1, ret, c, nargs, nflgs = 0;
+    extern  char* optarg;
+    FILE *fpe;
+    FILE *fps;
+
+    char fnameent[300];
+    char fnamesai[300];
+    char fdiretorio[300];
+    char szTemp[500];
+    char Registro[84];
+    char dbname[60];
+	  char *usuario;
+	  char *banco;	  
+
+    static char SccsId[] = "@(#)beb622.pc\t\t2.0\t(CYBER AGENCY - CETELEM)  25/10/2012";
+    static char *copy1right = "CyberFinancial \n";
+    static char *copy2right = "Inffinix Software S.A. \n";
+    static char *copy3right = "Copyright (c) Inffinix Software S.A.    , 2012 \n";
+
+    char progid[50];   /*!< Identificador do processo vigente */
+		
+    char* vers = SccsId;
+		
+    /* Inicializacao. */
+
+    d_bug = ret = 0;
+
+
+    fnameent  [0] = _EOS;
+    fnamesai  [0] = _EOS;
+    fdiretorio[0] = _EOS;
+
+    strcpy(progid, argv[0]);
+
+   
+    fprintf(stdout, "%s \n\n%s%s%s\n", vers, copy1right, copy2right, copy3right);
+    fprintf(stdout, "Parametros de execucao : ");
+    fflush(stdout);
+
+    /* Leitura e validacao do parametros fornecidos. */
+
+    for (i = 0; i < argc; i++)
+    {
+        fprintf(stdout, " %s ", argv[i]);
+        fflush(stdout);
+    }
+
+    fprintf(stdout, "\n"); fflush(stdout);
+
+    while ((c = getopt (argc, argv, "?hvde:s:f:")) != -1) {
+        switch (c)
+        {
+        case '?':
+        case 'h':
+            fprintf (stdout, "\nUSO: %s [-options] \n", argv[0]);
+            fprintf (stdout, "OPTIONS:    \n");
+            fprintf (stdout, "-e nomearq    : Nome Arquivo de Entrada \n");
+            fprintf (stdout, "-s diretorio  : Diretorio Arquivo de Saida \n");
+            fprintf (stdout, "-h            : Exibe ajuda\n");
+            fprintf (stdout, "-v            : Exibe copyright e numero da versao \n");
+            fprintf (stdout, "-d            : Liga Debug\n");                    
+            exit (9);
+            break;
+        case 'e':           /* arquivo de entrada */
+            strcpy (fnameent, optarg);
+            break;
+        case 's':           /* diretorio do arquivo de saida */
+            strcpy (fdiretorio, optarg);
+            break;
+        case 'd':           /* if -d, set dbug */
+            d_bug = 1;
+            break;        
+        case 'v':           /* imprimir versão */
+            fprintf (stdout, "\n%s \n\n%s%s%s\n",vers, copy1right, copy2right, copy3right);
+            exit(90);
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (strlen(fnameent) == 0)
+    {
+        fprintf (stdout, "Opcao -e (nome arquivo de entrada) obrigatoria!\n"); fflush(stdout);
+        exit (2);
+    }
+    if (strlen(fdiretorio) == 0)
+    {
+        fprintf (stdout, "Opcao -s (Diretorio de Saida) obrigatoria!\n"); fflush(stdout);
+        exit (2);
+    }
+    
+		
+		/* pega variaveis de ambiente para conexao com banco */
+		usuario=getenv("CYBERCONN");
+		banco=getenv("ORACLE_SID");
+		
+		/* verifica variavel de ambiente*/
+    if (usuario == NULL)
+    {
+        fprintf (stdout, "Variavel de ambiente CYBERCONN nao definida !\n");
+        exit (2);
+    }
+		
+		/* verifica variavel de ambiente*/
+		 if (banco == NULL)
+    {
+        fprintf (stdout, "Variavel de ambiente ORACLE_SID nao definida !\n");
+        exit (2);
+    }
+		
+    sprintf(dbname, "%s@%s",usuario,banco);
+
+    /* Inicia processo */
+    
+    EXEC SQL CONNECT :dbname;
+	
+    EXEC SQL SELECT to_char (sysdate,'yyyymmdd hh24:mi:ss') INTO :data_temp FROM dual;   
+    	
+    EXEC SQL SELECT to_char (ifxdate,'yyyymmdd') INTO :yyyymmdd_temp FROM dual;          
+    
+    EXEC SQL SELECT to_char (sysdate,'hh24mi')   INTO :hhmm_temp     FROM dual;        
+        
+    	
+    /* abre arquivo leitura*/	  
+    if ((fpe=fopen(fnameent,"r"))==NULL)
+    {
+        fprintf(stdout,"Arquivo (%s) nao pode ser Aberto !\n",fnameent); fflush(stdout);
+        exit(1);
+    }
+       
+    /*  Monta o log:  aaaammdd_hhmm_acordo_novo_assessoria_beb622_XX.log (XX = Ect) */    
+    substr(fnameent,54,2,stAgencia);        
+    sprintf(fnamesai,"%s/%8s_%4s_acordo_novo_assessoria_beb622_%2s.log", fdiretorio,yyyymmdd_temp,hhmm_temp,stAgencia);    
+    
+    /* abre arquivo escrita*/	  
+    if ((fps = fopen(fnamesai,"w")) == NULL)
+    {
+        fprintf(stderr,"Erro abertura arquivo saida %s - errno %d\n",fnamesai,errno);
+        exit(90);
+    }  
+    		
+    strcpy(str, "");
+    strcpy(str1, "");
+    strcpy (Registro, "");
+    
+    /* pula o header */
+    fgets(str,COLUNAS_ARQUIVO + 1,fpe);
+    fgets(str,COLUNAS_ARQUIVO + 1,fpe);
+    
+    do /* processamento principal*/
+    {				
+    		/*verifica se chegou no trailler*/
+				if (str[0] == 'T')
+        	{
+        		fprintf (stdout, "\nFim do arquivo:%s\n",fnameent);
+            break;
+        	}            	      	
+    	          	      	    	            		    		
+    		substr(str,2,10,stNumContrato);                   
+    		substr(str,45,11,stAhlstcurbal);   
+    		
+                                          			
+        sprintf(str1,"Numero do Contrato:[%10s] Curbal:[%11s]",stNumContrato,stAhlstcurbal);       
+     		strncpy(Registro,str1,sizeof(Registro));               		     		
+        Registro[68] = '\0';        	     		
+        
+        if (d_bug == 1) 
+        {   fprintf(stdout,"%s\n", str1); fflush(stdout);          		      		
+        }                            			                        			
+                        			
+        fprintf(fps,"%s\n",Registro);  /* grava os registros */
+        
+        /*le AHID,AHCOLLID,AHTYPE da AGRHDR */        
+        sprintf (qry_sel_ahid, "SELECT AHID,AHCOLLID,AHTYPE FROM AGRHDR WHERE AHACCT = '%s' AND AHSTATUS <> 'C';",stNumContrato);
+        if (d_bug == 1)
+        {
+        fprintf(stdout,"Query usada:%s\n", qry_sel_ahid); fflush(stdout);
+        }                
+        EXEC SQL SELECT ahid,ahcollid,ahtype INTO :iAhid,:stAhcollid,:stAhtype from agrhdr where ahacct = :stNumContrato and ahstatus <> 'C';
+				
+							  
+			  /*le ADACCT da AGRDM */        
+        sprintf (qry_sel_adacct, "SELECT ADACCT FROM AGRDM WHERE ADAHID = '%d' AND ROWNUM = 1;",iAhid);
+        if (d_bug == 1)
+        {
+        fprintf(stdout,"Query usada:%s\n", qry_sel_adacct); fflush(stdout);        
+        }
+        EXEC SQL SELECT adacct INTO :stAdacct from agrdm where adahid = :iAhid and rownum = 1;
+				
+				
+				/*atualiza DELQMST */        
+        sprintf (qry_upd_delqmst, "UPDATE DELQMST SET DMAGCHGDT = SYSDATE, DMAGSTATUS = 'A', TO_NUMBER(NVL(RTRIM(LTRIM(%s)),0))/100 WHERE DMACCT = '%s';",stAhlstcurbal,stAdacct);
+        if (d_bug == 1)
+        {
+        fprintf(stdout,"Query usada:%s\n", qry_upd_delqmst); fflush(stdout);        
+      	}
+        EXEC SQL UPDATE DELQMST SET DMAGCHGDT = SYSDATE, DMAGSTATUS = 'A', DMCURBAL = TO_NUMBER(NVL(RTRIM(LTRIM(:stAhlstcurbal)),0))/100 WHERE DMACCT = :stAdacct;
+				
+				
+				/*atualiza AGRHDH */        
+        sprintf (qry_upd_agrhdr, "UPDATE AGRHDR SET AHAUTDT = SYSDATE, AHSTATUS = 'A',AHLSTCURBAL = TO_NUMBER(NVL(RTRIM(LTRIM('%s')),0))/100 WHERE AHID = %d;",stAhlstcurbal,iAhid);
+        if (d_bug == 1)
+        {
+        fprintf(stdout,"Query usada:%s\n", qry_upd_agrhdr); fflush(stdout);        
+      	}
+        EXEC SQL UPDATE AGRHDR SET AHAUTDT = SYSDATE, AHSTATUS = 'A', AHLSTCURBAL = TO_NUMBER(NVL(RTRIM(LTRIM(:stAhlstcurbal)),0))/100 WHERE AHID = :iAhid;
+        
+        
+        /*insere na ACTFIL */        
+        sprintf (qry_ins_actfil, "INSERT INTO ACTFIL (ACACCTG,ACACCT,ACACTDTE,ACSEQNUM,ACACCODE,ACRCCODE,ACCIDNAM,ACCOMM) VALUES ('6','%s',SYSDATE,0,'AG','AG','%s','Novo Acordo : %s');",stAdacct,stAhcollid,stAhtype);
+        if (d_bug == 1)
+        {
+        fprintf(stdout,"Query usada:%s\n", qry_ins_actfil); fflush(stdout);        
+      	}
+        EXEC SQL INSERT INTO ACTFIL (ACACCTG,ACACCT,ACACTDTE,ACSEQNUM,ACACCODE,ACRCCODE,ACCIDNAM,ACCOMM) VALUES ('6',:stAdacct,SYSDATE,0,'AG','AG',TRIM(:stAhcollid),'Novo Acordo :  ' || :stAhtype);
+        	
+        	
+				/*insere na TRANFL */        
+        sprintf (qry_ins_tranfl, "INSERT INTO TRANFL (TRACCTG,TRACCT,TRCOLLID,TRTIME,TRSTRTIME,TRSESSCNT,TRTYPE,TRACCODE,TRRCCODE,TRCOMM,TRNXTCON) VALUES ('6','%s' ,'%s',      SYSDATE,     SYSDATE,     0, 2,'AG',  'AG',  'Novo Acordo : %s',   SYSDATE) ;",stAdacct,stAhcollid,stAhtype);
+        if (d_bug == 1)
+        {
+        fprintf(stdout,"Query usada:%s\n", qry_ins_tranfl); fflush(stdout);        
+      	}
+        EXEC SQL INSERT INTO TRANFL (TRACCTG,TRACCT,TRCOLLID,TRTIME,TRSTRTIME,TRSESSCNT,TRTYPE,TRACCODE,TRRCCODE,TRCOMM,TRNXTCON) VALUES ('6',:stAdacct,TRIM(:stAhcollid),      SYSDATE,     SYSDATE,     0, 2,'AG',  'AG',  'Novo Acordo :  ' || :stAhtype,   SYSDATE);
+        	
+        	
+				EXEC SQL COMMIT;        	        	
+        tot_lidos++;     
+        tot_gravados++;
+        tot_regECT++;
+        
+        strcpy (str, "");
+        strcpy (str1, "");
+        strcpy (Registro, "");
+        
+
+    }while( (fgets(str,COLUNAS_ARQUIVO + 1,fpe)) != NULL);
+    			
+    if (tot_lidos > 0)   
+    {           
+    	  tot_ECTs++;    	     	   
+        fclose(fps);
+    }
+    fclose(fpe);  /* fecha interface de entrada */
+
+
+    /* Grava resumo consolidado . */
+
+    fprintf(stdout,"\n ");
+    fprintf(stdout,"\n   *****  Resumo do Processo  *****\n");
+    fprintf(stdout,"%40s %8ld\n", "Total de Registros Lidos .......:" , tot_lidos);
+    fprintf(stdout,"%40s %8ld\n", "Total de Registros Gravados.....:" , tot_gravados);
+    fprintf(stdout,"%40s %8ld\n", "Total de Arquivos Gravados .....:" , tot_ECTs);  
+
+    fflush(stdout);
+               
+    EXEC SQL SELECT sysdate INTO :data_temp FROM DUAL;
+    fprintf(stdout, "\nProcesso %s finalizado: %s \n\n", progid, data_temp); fflush(stdout);
+    
+    EXEC SQL COMMIT WORK RELEASE;
+
+    exit(ST_OK);
+
+}   /***  end main()  ***/
+
